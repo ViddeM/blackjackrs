@@ -1,6 +1,8 @@
 use crate::types::{Hand, Shoe, TWENTY_ONE};
 use clap::Parser;
 use std::io::stdin;
+use std::thread;
+use std::time::Duration;
 
 mod types;
 
@@ -15,6 +17,15 @@ struct BlackJack {
     /// The minimum number of cards required to play another round
     #[clap(short, long, default_value_t = 52)]
     reshuffle_limit: u32,
+
+    /// Delay (in milliseconds) between moves to make it easier to follow the game, 0 means no delay.
+    #[clap(long, default_value_t = 1000)]
+    delay: u32,
+}
+
+struct GameConfig {
+    sleep_duration: Duration,
+    reshuffle_limit: u32,
 }
 
 fn main() {
@@ -23,24 +34,36 @@ fn main() {
     let shoe = Shoe::new(args.deck_count).expect("Failed to create shoe");
     let shoe = shoe.shuffle();
 
-    play_shoe(shoe, args.reshuffle_limit);
+    play_shoe(
+        shoe,
+        &GameConfig {
+            reshuffle_limit: args.reshuffle_limit,
+            sleep_duration: Duration::from_millis(args.delay as u64),
+        },
+    );
 }
 
-fn play_shoe(shoe: Shoe, reshuffle_limit: u32) {
+fn play_shoe(shoe: Shoe, conf: &GameConfig) {
     let mut shoe = shoe;
     loop {
         println!("============ ROUND BEGIN ============");
-        shoe = play_round(shoe);
-        println!("============ ROUND END   ============ \n\n");
+        shoe = play_round(shoe, conf);
+        thread::sleep(conf.sleep_duration);
+        println!("============ ROUND END   ============ \n");
 
-        if shoe.num_cards() < reshuffle_limit {
+        println!(
+            "Counts (running/true) {}/{:.1}\n",
+            shoe.running_count, shoe.true_count
+        );
+
+        if shoe.num_cards() < conf.reshuffle_limit {
             println!("Shoe over");
             return;
         }
     }
 }
 
-fn play_round(shoe: Shoe) -> Shoe {
+fn play_round(shoe: Shoe, conf: &GameConfig) -> Shoe {
     let mut shoe = shoe.clone();
 
     let mut dealer_hand = Hand::from_card(shoe.take_card());
@@ -49,6 +72,7 @@ fn play_round(shoe: Shoe) -> Shoe {
     player_hand.add_card(shoe.take_card());
 
     println!("Dealer: {}", dealer_hand);
+    thread::sleep(conf.sleep_duration);
 
     let (player_hand, shoe) = player_turn(player_hand, shoe);
 
@@ -58,19 +82,22 @@ fn play_round(shoe: Shoe) -> Shoe {
     // Check winnings
     if player_hand.is_blackjack() {
         if dealer_hand.is_blackjack() {
-            println!("Push");
+            println!("Push! You get your money back");
         } else {
             println!("BlackJack wins 3:2");
         }
+        return shoe;
     }
 
-    let (dealer_hand, shoe) = dealer_turn(dealer_hand, shoe);
+    let (dealer_hand, shoe) = dealer_turn(dealer_hand, shoe, conf);
 
     let player_value = player_hand.calc_value();
     let dealer_value = dealer_hand.calc_value();
 
+    thread::sleep(conf.sleep_duration);
+
     if player_value > TWENTY_ONE {
-        println!("Bust :(");
+        println!("Player bust :(");
         return shoe;
     }
 
@@ -80,7 +107,7 @@ fn play_round(shoe: Shoe) -> Shoe {
     }
 
     if player_value == dealer_value {
-        println!("Push!");
+        println!("Push! You get your money back");
         return shoe;
     }
 
@@ -126,7 +153,8 @@ fn player_turn(hand: Hand, shoe: Shoe) -> (Hand, Shoe) {
 
             match choice.as_str() {
                 "h" => {
-                    hand.add_card(shoe.take_card());
+                    let card = shoe.take_card();
+                    hand.add_card(card);
                     break;
                 }
                 "s" => return (hand, shoe),
@@ -138,7 +166,7 @@ fn player_turn(hand: Hand, shoe: Shoe) -> (Hand, Shoe) {
     }
 }
 
-fn dealer_turn(hand: Hand, shoe: Shoe) -> (Hand, Shoe) {
+fn dealer_turn(hand: Hand, shoe: Shoe, conf: &GameConfig) -> (Hand, Shoe) {
     let mut hand = hand;
     let mut shoe = shoe;
 
@@ -146,6 +174,8 @@ fn dealer_turn(hand: Hand, shoe: Shoe) -> (Hand, Shoe) {
         if hand.calc_value() >= 17 {
             return (hand, shoe);
         }
+
+        thread::sleep(conf.sleep_duration);
 
         hand.add_card(shoe.take_card());
         println!("Dealer hit {}", hand);

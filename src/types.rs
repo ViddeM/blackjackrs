@@ -7,6 +7,7 @@ pub enum Error {
 }
 
 pub const TWENTY_ONE: u32 = 21;
+pub const DECK_SIZE: usize = 52;
 
 #[derive(Default)]
 pub struct Hand {
@@ -30,7 +31,7 @@ impl Hand {
             .sum();
 
         let mut val = val_without_aces;
-        for n in 0..aces {
+        for n in 0..=aces {
             let num_aces = aces - n;
             val = val_without_aces + (num_aces * Value::ACE_HIGH_VAL) + (n * Value::ACE_LOW_VAL);
 
@@ -59,13 +60,13 @@ impl Display for Hand {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Value: {} | {}",
-            self.calc_value(),
+            "{} ({})",
             self.cards
                 .iter()
                 .map(|c| c.to_string())
                 .collect::<Vec<String>>()
-                .join(" ")
+                .join(" "),
+            self.calc_value(),
         )
     }
 }
@@ -73,6 +74,8 @@ impl Display for Hand {
 #[derive(Clone)]
 pub struct Shoe {
     pub cards: Vec<Card>,
+    pub running_count: i32,
+    pub true_count: f32,
 }
 
 impl Shoe {
@@ -88,11 +91,29 @@ impl Shoe {
             .flatten()
             .collect::<Vec<Card>>();
 
-        Ok(Shoe { cards: deck_cards })
+        Ok(Shoe {
+            cards: deck_cards,
+            running_count: 0,
+            true_count: 0f32,
+        })
     }
 
     pub fn take_card(&mut self) -> Card {
-        self.cards.pop().expect("Out of cards!")
+        let card = self.cards.pop().expect("Out of cards!");
+        let card_val = card.value.value();
+        let count_change = if card_val <= 6 {
+            1
+        } else if card_val >= 10 {
+            -1
+        } else {
+            0
+        };
+
+        self.running_count += count_change;
+        let remaining_decks = (self.cards.len() / DECK_SIZE) as f32;
+        self.true_count = self.running_count as f32 / remaining_decks;
+
+        card
     }
 
     pub fn num_cards(&self) -> u32 {
@@ -104,7 +125,11 @@ impl Shoe {
         let mut new_cards = self.cards.clone();
         new_cards.shuffle(&mut rng);
 
-        Self { cards: new_cards }
+        Self {
+            cards: new_cards,
+            running_count: 0,
+            true_count: 0f32,
+        }
     }
 }
 
@@ -137,7 +162,7 @@ impl Deck {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Card {
     pub suit: Suit,
     pub value: Value,
@@ -149,7 +174,7 @@ impl Display for Card {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Suit {
     Spades,
     Hearts,
@@ -259,5 +284,89 @@ impl Value {
             Value::King => 10,
             Value::Ace => 11,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::types::{Card, Suit, Value};
+    use crate::Hand;
+
+    #[test]
+    fn test_hand_add_card() {
+        let mut hand = Hand::default();
+        let card = Card {
+            suit: Suit::Spades,
+            value: Value::Two,
+        };
+        hand.add_card(card.clone());
+        assert_eq!(hand.cards.len(), 1);
+        assert_eq!(hand.cards[0], card);
+    }
+
+    #[test]
+    fn test_hand_calc_val() {
+        let two_spades = Card {
+            suit: Suit::Spades,
+            value: Value::Two,
+        };
+        let king_hearts = Card {
+            suit: Suit::Hearts,
+            value: Value::King,
+        };
+        let four_diamonds = Card {
+            suit: Suit::Diamonds,
+            value: Value::Four,
+        };
+        let five_clubs = Card {
+            suit: Suit::Clubs,
+            value: Value::Five,
+        };
+
+        let mut hand = Hand::from_card(two_spades);
+        hand.add_card(king_hearts);
+        hand.add_card(four_diamonds);
+        hand.add_card(five_clubs);
+
+        assert_eq!(hand.calc_value(), 21);
+    }
+
+    #[test]
+    fn test_hand_calc_val_high_ace() {
+        let ace = Card {
+            suit: Suit::Spades,
+            value: Value::Ace,
+        };
+        let king = Card {
+            suit: Suit::Diamonds,
+            value: Value::King,
+        };
+
+        let mut hand = Hand::from_card(ace);
+        hand.add_card(king);
+
+        assert_eq!(hand.calc_value(), 21);
+    }
+
+    #[test]
+    fn test_hand_calc_val_low_ace() {
+        let ace = Card {
+            suit: Suit::Spades,
+            value: Value::Ace,
+        };
+        let king = Card {
+            suit: Suit::Diamonds,
+            value: Value::King,
+        };
+        let jack = Card {
+            suit: Suit::Clubs,
+            value: Value::Jack,
+        };
+
+        let mut hand = Hand::from_card(ace);
+        hand.add_card(king);
+        hand.add_card(jack);
+
+        assert_eq!(hand.calc_value(), 21);
     }
 }
