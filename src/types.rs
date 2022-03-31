@@ -9,6 +9,44 @@ pub enum Error {
 pub const TWENTY_ONE: u32 = 21;
 pub const DECK_SIZE: usize = 52;
 
+pub struct Player {
+    pub money: f64,
+    pub current_bet: u64,
+    pub hand: Hand,
+}
+
+impl Player {
+    /// Place a bet, returns true if successful and false if there wasn't enough money to place the bet.
+    pub fn place_bet(&mut self, bet_amount: u64) -> bool {
+        if self.money < bet_amount as f64 {
+            return false;
+        }
+
+        self.money -= bet_amount;
+        self.current_bet = bet_amount;
+        return true;
+    }
+
+    /// Returns the percent of the current bet to the money.
+    pub fn return_percent(&mut self, percent: f64) -> f64 {
+        let won_money = percent * (self.current_bet as f64);
+        self.money += won_money;
+        won_money
+    }
+
+    pub fn new(initial_money: f64) -> Self {
+        Self {
+            money: initial_money,
+            current_bet: 0,
+            hand: Hand::default(),
+        }
+    }
+
+    pub fn new_hand(&mut self) {
+        self.hand = Hand::default();
+    }
+}
+
 #[derive(Default)]
 pub struct Hand {
     pub cards: Vec<Card>,
@@ -120,16 +158,14 @@ impl Shoe {
         self.cards.len() as u32
     }
 
-    pub fn shuffle(self) -> Self {
+    pub fn shuffle(&mut self) {
         let mut rng = thread_rng();
         let mut new_cards = self.cards.clone();
         new_cards.shuffle(&mut rng);
 
-        Self {
-            cards: new_cards,
-            running_count: 0,
-            true_count: 0f32,
-        }
+        self.cards = new_cards;
+        self.running_count = 0;
+        self.true_count = 0f32;
     }
 }
 
